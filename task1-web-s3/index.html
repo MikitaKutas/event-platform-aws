@@ -35,6 +35,28 @@
       </section>
 
       <section class="card">
+        <h2>Зарегистрироваться на мероприятие</h2>
+        <form id="register-form">
+          <label>
+            Мероприятие
+            <select name="eventId" id="register-event-select" required>
+              <option value="">Загрузка списка…</option>
+            </select>
+          </label>
+          <label>
+            Имя
+            <input type="text" name="userName" required maxlength="100" />
+          </label>
+          <label>
+            Email
+            <input type="email" name="email" required maxlength="100" />
+          </label>
+          <button type="submit">Зарегистрироваться</button>
+          <p id="register-status" class="status" aria-live="polite"></p>
+        </form>
+      </section>
+
+      <section class="card">
         <h2>Регистрации участников</h2>
         <div class="chart-toolbar">
           <button id="refresh-stats" type="button">Обновить</button>

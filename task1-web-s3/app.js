@@ -3,17 +3,23 @@
 const API_BASE_URL =
   (window.__CONFIG__ && window.__CONFIG__.API_BASE_URL) || "";
 
-const form = document.getElementById("event-form");
-const formStatus = document.getElementById("form-status");
+const eventForm = document.getElementById("event-form");
+const eventFormStatus = document.getElementById("form-status");
+
+const registerForm = document.getElementById("register-form");
+const registerFormStatus = document.getElementById("register-status");
+const registerEventSelect = document.getElementById("register-event-select");
+
 const refreshBtn = document.getElementById("refresh-stats");
 const statsUpdated = document.getElementById("stats-updated");
 const chartCanvas = document.getElementById("stats-chart");
 
 let statsChart;
+let lastStats = [];
 
-function setStatus(msg, kind) {
-  formStatus.textContent = msg;
-  formStatus.className = "status" + (kind ? " " + kind : "");
+function setStatus(el, msg, kind) {
+  el.textContent = msg;
+  el.className = "status" + (kind ? " " + kind : "");
 }
 
 async function apiFetch(path, options = {}) {
@@ -31,31 +37,104 @@ async function apiFetch(path, options = {}) {
   return resp.json();
 }
 
-form.addEventListener("submit", async (e) => {
+// ---------- create event ----------
+eventForm.addEventListener("submit", async (e) => {
   e.preventDefault();
-  const fd = new FormData(form);
+  const fd = new FormData(eventForm);
   const payload = {
     name: (fd.get("name") || "").toString().trim(),
     date: (fd.get("date") || "").toString(),
     description: (fd.get("description") || "").toString().trim(),
   };
   if (!payload.name || !payload.date) {
-    setStatus("Название и дата обязательны", "err");
+    setStatus(eventFormStatus, "Название и дата обязательны", "err");
     return;
   }
-  setStatus("Отправка…");
+  setStatus(eventFormStatus, "Отправка…");
   try {
     const data = await apiFetch("/event", {
       method: "POST",
       body: JSON.stringify(payload),
     });
-    setStatus(`Мероприятие создано (id: ${data.id || "?"})`, "ok");
-    form.reset();
+    setStatus(
+      eventFormStatus,
+      `Мероприятие создано (id: ${data.id || "?"})`,
+      "ok",
+    );
+    eventForm.reset();
     await loadStats();
   } catch (err) {
-    setStatus("Ошибка: " + err.message, "err");
+    setStatus(eventFormStatus, "Ошибка: " + err.message, "err");
   }
 });
+
+registerForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const fd = new FormData(registerForm);
+  const payload = {
+    eventId: (fd.get("eventId") || "").toString(),
+    userName: (fd.get("userName") || "").toString().trim(),
+    email: (fd.get("email") || "").toString().trim(),
+  };
+  if (!payload.eventId) {
+    setStatus(registerFormStatus, "Выбери мероприятие", "err");
+    return;
+  }
+  if (!payload.userName || !payload.email) {
+    setStatus(registerFormStatus, "Имя и email обязательны", "err");
+    return;
+  }
+  setStatus(registerFormStatus, "Отправка…");
+  try {
+    const data = await apiFetch("/register", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    const eventName =
+      (lastStats.find((s) => s.event_id === payload.eventId) || {}).name ||
+      "мероприятие";
+    setStatus(
+      registerFormStatus,
+      `Регистрация принята: ${data.userName} → ${eventName}`,
+      "ok",
+    );
+
+    registerForm.querySelector('input[name="userName"]').value = "";
+    registerForm.querySelector('input[name="email"]').value = "";
+    await loadStats();
+  } catch (err) {
+    setStatus(registerFormStatus, "Ошибка: " + err.message, "err");
+  }
+});
+
+function populateEventSelect(stats) {
+  const prevValue = registerEventSelect.value;
+  if (!stats.length) {
+    registerEventSelect.innerHTML =
+      '<option value="">Сначала создай мероприятие</option>';
+    return;
+  }
+  registerEventSelect.innerHTML =
+    '<option value="">— выбери мероприятие —</option>' +
+    stats
+      .map(
+        (s) =>
+          `<option value="${s.event_id}">${escapeHtml(s.name || s.event_id)} — ${s.date || ""}</option>`,
+      )
+      .join("");
+
+  if (prevValue && stats.some((s) => s.event_id === prevValue)) {
+    registerEventSelect.value = prevValue;
+  }
+}
+
+function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
 
 function renderChart(stats) {
   const labels = stats.map((s) => s.name || s.event_id);
@@ -94,10 +173,14 @@ async function loadStats() {
   try {
     const data = await apiFetch("/stats");
     const arr = Array.isArray(data) ? data : data.items || [];
+    lastStats = arr;
     renderChart(arr);
+    populateEventSelect(arr);
     statsUpdated.textContent = "Обновлено " + new Date().toLocaleTimeString();
   } catch (err) {
     statsUpdated.textContent = "Ошибка: " + err.message;
+    registerEventSelect.innerHTML =
+      '<option value="">Не удалось загрузить список</option>';
   } finally {
     refreshBtn.disabled = false;
   }
