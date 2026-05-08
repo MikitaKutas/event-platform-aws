@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Event Platform</title>
+    <link rel="stylesheet" href="style.css" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  </head>
+  <body>
+    <header>
+      <h1>Event Platform</h1>
+      <p class="subtitle">Создание мероприятий и регистрация участников</p>
+    </header>
+
+    <main>
+      <section class="card">
+        <h2>Создать мероприятие</h2>
+        <form id="event-form">
+          <label>
+            Название
+            <input type="text" name="name" required maxlength="100" />
+          </label>
+          <label>
+            Дата
+            <input type="date" name="date" required />
+          </label>
+          <label>
+            Описание
+            <textarea name="description" rows="3" maxlength="500"></textarea>
+          </label>
+          <button type="submit">Создать</button>
+          <p id="form-status" class="status" aria-live="polite"></p>
+        </form>
+      </section>
+
+      <section class="card">
+        <h2>Регистрации участников</h2>
+        <div class="chart-toolbar">
+          <button id="refresh-stats" type="button">Обновить</button>
+          <span id="stats-updated" class="muted"></span>
+        </div>
+        <canvas id="stats-chart" height="220"></canvas>
+      </section>
+    </main>
+
+    <script src="config.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

@@ -50,3 +50,6 @@ Thumbs.db
 dist/
 build/
 *.zip
+
+# Task 1
+task1-web-s3/config.js
