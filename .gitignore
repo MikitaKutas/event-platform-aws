@@ -1,0 +1,52 @@
+# Env / secrets
+.env
+.env.local
+*.env
+
+# Node
+node_modules/
+npm-debug.log
+yarn-error.log
+package-lock.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+
+# SAM / CDK / Serverless
+.aws-sam/
+.serverless/
+cdk.out/
+samconfig.toml.local
+
+# Spark
+*.crc
+metastore_db/
+derby.log
+spark-warehouse/
+
+# Flink
+flink-conf-local/
+
+# Ludwig / ML
+results/
+*.h5
+*.pt
+*.pkl
+checkpoints/
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Build artifacts
+dist/
+build/
+*.zip
