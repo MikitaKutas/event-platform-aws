@@ -1,0 +1,8 @@
+{
+  "name": "create-event",
+  "version": "1.0.0",
+  "description": "Lambda: POST /event",
+  "main": "index.mjs",
+  "type": "module",
+  "private": true
+}

@@ -1,0 +1,193 @@
+openapi: 3.0.3
+info:
+  title: Event Platform API
+  description: |
+    REST API для платформы мероприятий. Реализован на AWS API Gateway + Lambda + DynamoDB.
+
+    Эндпоинты:
+      * POST /event    — создать мероприятие
+      * POST /register — зарегистрировать участника
+      * GET  /stats    — статистика регистраций по мероприятиям
+  version: 1.0.0
+
+servers:
+  - url: https://{apiId}.execute-api.{region}.amazonaws.com/Prod
+    variables:
+      apiId:
+        default: example
+      region:
+        default: eu-north-1
+
+paths:
+  /event:
+    post:
+      summary: Создать мероприятие
+      operationId: createEvent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateEventRequest"
+      responses:
+        "201":
+          description: Мероприятие создано
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Event"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /register:
+    post:
+      summary: Зарегистрировать участника на мероприятие
+      operationId: registerUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterRequest"
+      responses:
+        "201":
+          description: Регистрация создана
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Registration"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          description: Мероприятие не найдено
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /stats:
+    get:
+      summary: Статистика регистраций по мероприятиям
+      operationId: getStats
+      responses:
+        "200":
+          description: Список мероприятий с количеством регистраций
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/EventStat"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+components:
+  schemas:
+    CreateEventRequest:
+      type: object
+      required: [name, date]
+      properties:
+        name:
+          type: string
+          maxLength: 100
+          example: "Tech Meetup"
+        date:
+          type: string
+          format: date
+          example: "2026-06-15"
+        description:
+          type: string
+          maxLength: 500
+          example: "Встреча инженеров"
+
+    Event:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        date:
+          type: string
+          format: date
+        description:
+          type: string
+        registrations:
+          type: integer
+          example: 0
+        createdAt:
+          type: string
+          format: date-time
+
+    RegisterRequest:
+      type: object
+      required: [eventId, userName, email]
+      properties:
+        eventId:
+          type: string
+          format: uuid
+        userName:
+          type: string
+          maxLength: 100
+        email:
+          type: string
+          format: email
+
+    Registration:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        eventId:
+          type: string
+          format: uuid
+        userName:
+          type: string
+        email:
+          type: string
+        registeredAt:
+          type: string
+          format: date-time
+
+    EventStat:
+      type: object
+      properties:
+        event_id:
+          type: string
+        name:
+          type: string
+        date:
+          type: string
+        registrations:
+          type: integer
+
+    Error:
+      type: object
+      properties:
+        message:
+          type: string
+        error:
+          type: string
+
+  responses:
+    BadRequest:
+      description: Невалидный запрос
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    InternalError:
+      description: Внутренняя ошибка
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
