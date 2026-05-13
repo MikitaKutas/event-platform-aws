@@ -1,0 +1,38 @@
+# DEPRECATED — Task 3 был мигрирован с локального Docker Compose на ECS on EC2.
+# Этот файл сохранён только для локальной отладки (опционально).
+# Основной деплой — через ./deploy.sh (CloudFormation + ECR + ECS).
+#
+# Запуск (если хочешь проверить локально перед пушем в ECR):
+#     docker compose up --build -d
+#     curl http://localhost:8080/events
+
+services:
+  flask1:
+    build: .
+    image: event-platform-flask:local
+    hostname: flask1
+    environment:
+      EVENTS_SOURCE: ${EVENTS_SOURCE:-mock}
+    networks: [app]
+
+  flask2:
+    build: .
+    image: event-platform-flask:local
+    hostname: flask2
+    environment:
+      EVENTS_SOURCE: ${EVENTS_SOURCE:-mock}
+    networks: [app]
+
+  nginx:
+    build:
+      context: .
+      dockerfile: Dockerfile.nginx
+    image: event-platform-nginx:local
+    ports:
+      - "${NGINX_PORT:-8080}:80"
+    depends_on: [flask1, flask2]
+    networks: [app]
+
+networks:
+  app:
+    driver: bridge

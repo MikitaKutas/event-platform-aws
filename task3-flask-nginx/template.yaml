@@ -1,0 +1,202 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Task 3 — Балансировка нагрузки на ECS on EC2 (Free Tier friendly).
+  Один EC2 t3.micro с ECS-агентом, на нём ECS Task с 3 контейнерами:
+  flask1, flask2, nginx. Nginx балансирует round-robin между flask1/flask2
+  через docker bridge + links. Публичный доступ через порт 80.
+
+Parameters:
+  ClusterName:
+    Type: String
+    Default: event-platform-task3
+  InstanceType:
+    Type: String
+    Default: t3.micro
+    AllowedValues: [t2.micro, t3.micro]
+    Description: Free Tier — t2.micro или t3.micro
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: Default VPC (deploy.sh подставит автоматически)
+  SubnetId:
+    Type: AWS::EC2::Subnet::Id
+    Description: Public subnet с auto-assign public IP
+
+  EcsAmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ecs/optimized-ami/amazon-linux-2/recommended/image_id
+    Description: Последний ECS-optimized AMI из SSM (не менять)
+
+  FlaskImageUri:
+    Type: String
+    Description: ECR URI Flask образа (account.dkr.ecr.region.amazonaws.com/event-platform/flask:latest)
+  NginxImageUri:
+    Type: String
+    Description: ECR URI Nginx образа
+
+Resources:
+  # ----------------------------------------------------------------
+  # ECS cluster + CloudWatch log-группа
+  # ----------------------------------------------------------------
+  EcsCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Ref ClusterName
+
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/ecs/${ClusterName}"
+      RetentionInDays: 7
+
+  # ----------------------------------------------------------------
+  # Security Group: открываем только порт 80
+  # ----------------------------------------------------------------
+  EcsSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow HTTP on port 80
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+          Description: Public HTTP
+
+  # ----------------------------------------------------------------
+  # IAM: роль EC2 (ECS-агент) и Task Execution Role (pull из ECR + logs)
+  # ----------------------------------------------------------------
+  Ec2InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ec2.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore # для Session Manager (SSH-замена)
+
+  Ec2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles: [!Ref Ec2InstanceRole]
+
+  TaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ecs-tasks.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+
+  # ----------------------------------------------------------------
+  # EC2 инстанс с ECS-агентом
+  # ----------------------------------------------------------------
+  Ec2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref EcsAmiId
+      InstanceType: !Ref InstanceType
+      IamInstanceProfile: !Ref Ec2InstanceProfile
+      SubnetId: !Ref SubnetId
+      SecurityGroupIds: [!Ref EcsSecurityGroup]
+      Tags:
+        - Key: Name
+          Value: !Sub "${ClusterName}-ec2"
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          echo "ECS_CLUSTER=${ClusterName}" >> /etc/ecs/ecs.config
+
+  # ----------------------------------------------------------------
+  # Task Definition: 3 контейнера в одном task'е
+  # ----------------------------------------------------------------
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: event-platform-flask-nginx
+      NetworkMode: bridge
+      RequiresCompatibilities: [EC2]
+      ExecutionRoleArn: !GetAtt TaskExecutionRole.Arn
+      ContainerDefinitions:
+        - Name: flask1
+          Image: !Ref FlaskImageUri
+          Hostname: flask1
+          Essential: true
+          Memory: 200
+          Environment:
+            - { Name: EVENTS_SOURCE, Value: mock }
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: flask1
+
+        - Name: flask2
+          Image: !Ref FlaskImageUri
+          Hostname: flask2
+          Essential: true
+          Memory: 200
+          Environment:
+            - { Name: EVENTS_SOURCE, Value: mock }
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: flask2
+
+        - Name: nginx
+          Image: !Ref NginxImageUri
+          Essential: true
+          Memory: 100
+          PortMappings:
+            - { ContainerPort: 80, HostPort: 80, Protocol: tcp }
+          Links: [flask1, flask2]
+          DependsOn:
+            - { ContainerName: flask1, Condition: START }
+            - { ContainerName: flask2, Condition: START }
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: nginx
+
+  # ----------------------------------------------------------------
+  # ECS Service: 1 экземпляр task'а на нашей EC2-ноде
+  # ----------------------------------------------------------------
+  EcsService:
+    Type: AWS::ECS::Service
+    DependsOn: Ec2Instance
+    Properties:
+      ServiceName: flask-nginx
+      Cluster: !Ref EcsCluster
+      TaskDefinition: !Ref TaskDefinition
+      DesiredCount: 1
+      LaunchType: EC2
+      DeploymentConfiguration:
+        # на одной ноде нельзя запускать 2 task'а с hostPort=80 одновременно
+        MinimumHealthyPercent: 0
+        MaximumPercent: 100
+
+Outputs:
+  ClusterName:
+    Value: !Ref EcsCluster
+  PublicIp:
+    Description: Публичный IP EC2 (используется в smoke-test)
+    Value: !GetAtt Ec2Instance.PublicIp
+  PublicUrl:
+    Description: Открой это в браузере после деплоя
+    Value: !Sub "http://${Ec2Instance.PublicIp}"
+  LogGroupName:
+    Value: !Ref LogGroup

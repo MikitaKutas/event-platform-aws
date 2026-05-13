@@ -1,0 +1,7 @@
+# Минималистичный образ Nginx, который сразу содержит нашу конфигурацию.
+# Так не нужно монтировать nginx.conf с хоста — упрощает ECS task definition.
+FROM nginx:1.27-alpine
+
+COPY nginx.conf /etc/nginx/nginx.conf
+
+EXPOSE 80

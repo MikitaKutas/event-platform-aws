@@ -70,6 +70,7 @@ cd task1-web-s3
 Контракт описан в `openapi.yaml`. Инфраструктура — AWS SAM (`template.yaml`).
 
 Эндпоинты:
+
 - `POST /event` → Lambda `create-event` → пишет в DynamoDB `Events`
 - `POST /register` → Lambda `register-user` → пишет в `Registrations` + атомарно увеличивает счётчик `registrations` в `Events`
 - `GET /stats` → Lambda `get-stats` → возвращает список мероприятий с количеством регистраций
@@ -77,6 +78,7 @@ cd task1-web-s3
 CORS включён через API Gateway (`AllowOrigin: *`) — фронтенд из Task 1 ходит сюда напрямую.
 
 ### Структура
+
 ```
 task2-api/
 ├── openapi.yaml                # OpenAPI 3.0 спека
@@ -91,6 +93,7 @@ task2-api/
 ```
 
 ### Требования
+
 - AWS SAM CLI: `brew install aws-sam-cli`
 - Docker (нужен только если будешь использовать `sam local invoke`/`sam local start-api`)
 - `jq` для smoke-test: `brew install jq`
@@ -104,6 +107,7 @@ cd task2-api
 ```
 
 Скрипт соберёт функции, развернёт стек CloudFormation и распечатает `API_BASE_URL` вида:
+
 ```
 https://abcd1234.execute-api.eu-north-1.amazonaws.com/Prod
 ```
@@ -124,4 +128,94 @@ https://abcd1234.execute-api.eu-north-1.amazonaws.com/Prod
 ```bash
 ./teardown.sh
 # удалит стек, обе DynamoDB таблицы, Lambda функции и их CloudWatch log-группы
+```
+
+---
+
+## Task 3 — Балансировка нагрузки (ECS on EC2)
+
+Папка: `task3-flask-nginx/`
+
+Из двух разрешённых вариантов (`Docker + Nginx` или `ECS + Docker`) выбран **ECS on EC2** на t3.micro — укладывается во Free Tier и даёт полноценный AWS-опыт.
+
+### Архитектура
+
+```
+        Internet (0.0.0.0/0:80)
+                  │
+        ┌─────────▼─────────────┐
+        │   EC2 t3.micro        │   ← ECS-agent зарегистрирован в кластере
+        │   ECS Task            │
+        │   ┌────────┐ ┌──────┐ │
+        │   │ nginx  │ │flask1│ │   ← bridge network + links
+        │   │ :80    │ │:5000 │ │
+        │   └────────┘ └──────┘ │
+        │              ┌──────┐ │
+        │              │flask2│ │
+        │              │:5000 │ │
+        │              └──────┘ │
+        └───────────────────────┘
+
+  Логи → CloudWatch Logs (/ecs/event-platform-task3)
+  Образы → ECR private repos
+```
+
+Один ECS Task с тремя контейнерами в одном bridge-сетевом неймспейсе. Nginx делает round-robin между `flask1:5000` и `flask2:5000` (имена резолвятся через docker links).
+
+### Эндпоинты Flask
+
+- `GET /events` — список мероприятий + поле `served_by` (hostname контейнера)
+- `GET /health` — `200 OK`
+
+### Структура
+
+```
+task3-flask-nginx/
+├── app.py                # Flask приложение
+├── requirements.txt
+├── Dockerfile            # Flask image (python:3.11-slim + gunicorn)
+├── Dockerfile.nginx      # Nginx image с встроенным nginx.conf
+├── nginx.conf
+├── template.yaml         # CloudFormation: VPC, SG, IAM, EC2, ECS, TaskDef, Service, Logs
+├── deploy.sh             # ECR push + cfn deploy
+├── teardown.sh           # удаление стека + ECR
+├── smoke-test.sh         # N запросов к публичному IP EC2
+├── docker-compose.yml    # DEPRECATED — для опциональной локальной проверки
+└── .dockerignore
+```
+
+### Требования
+
+- AWS CLI v2 авторизован
+- Docker Desktop запущен (нужен для `docker build`/`docker push`)
+- `jq` — `brew install jq`
+
+### Запуск
+
+```bash
+cd task3-flask-nginx
+./deploy.sh
+```
+
+Скрипт:
+
+1. Создаёт 2 приватных ECR-репо: `event-platform/flask`, `event-platform/nginx`
+2. Билдит и пушит оба образа (для `linux/amd64`)
+3. Находит default VPC и public subnet в текущем регионе
+4. Разворачивает CloudFormation стек: ECS cluster, t3.micro с ECS-агентом, IAM роли, security group (порт 80), task definition, service
+5. Печатает публичный URL вида `http://<ec2-ip>`
+
+ECS service запускается ~30–60 секунд. После этого:
+
+```bash
+curl -i http://<ec2-ip>/health
+curl -s http://<ec2-ip>/events | jq .
+./smoke-test.sh 10
+```
+
+### Удаление
+
+```bash
+./teardown.sh
+# удаляет стек (EC2, ECS cluster, IAM, SG, log group), оба ECR repo с образами
 ```
