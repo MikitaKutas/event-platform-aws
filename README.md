@@ -5,9 +5,6 @@ event-platform-aws/
 ├── task1-web-s3/          # 1) Статический веб-интерфейс на S3
 ├── task2-api/             # 2) REST API на API Gateway + Lambda + DynamoDB
 ├── task3-flask-nginx/     # 3) Балансировка: Flask × 2 + Nginx через Docker Compose
-├── task4-spark/           # 4) PySpark батч — популярность мероприятий
-├── task5-flink-kinesis/   # 5) PyFlink + Kinesis — активные пользователи онлайн
-├── task6-ml-ludwig/       # 6) Ludwig модель + OpenSearch поиск по TF-IDF
 ├── .env.example           # Шаблон переменных окружения
 └── README.md
 ```
